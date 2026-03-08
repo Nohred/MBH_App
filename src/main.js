@@ -81,7 +81,7 @@ renderBtn.addEventListener('click', () => {
 function createVolumeRendering(header, image) {
   updateStatus("Converting data for GPU...");
 
-    // 1. Parse Data
+  // 1. Parse Data
   let typedData;
   if (header.datatypeCode === 2) typedData = new Uint8Array(image);
   else if (header.datatypeCode === 4) typedData = new Int16Array(image);
@@ -99,14 +99,11 @@ function createVolumeRendering(header, image) {
   const airValue = Math.max(typedData[0], typedData[typedData.length - 1]);
   let autoMin = airValue + 1;
   let autoMax = absMax;
-  let isCT = false;
 
-  //  CT SCAN DETECTOR 
+  // CT SCAN DETECTOR 
   if (absMin <= -1000 && absMax > 1000) {
-    isCT = true;
-    console.log("CT Scan Detected! Zooming contrast on brain tissue...");
-    autoMin = 0;   // Ignore dark air and fat
-    autoMax = 100; // Cap brightness at the density of hemorrhages
+    autoMin = -500; // Start capturing at soft tissue/skin (-500 HU)
+    autoMax = 1500; // Stop capping at hard bone (1500 HU)
   }
 
   // Map to the 3D Texture
@@ -115,19 +112,11 @@ function createVolumeRendering(header, image) {
   
   for (let i = 0; i < typedData.length; i++) {
     let val = typedData[i];
-    
-    if (val <= autoMin) {
-      volumeData[i] = 0; // Transparent background
-    } else if (isCT && val > 250) {
-      // AUTOMATIC SKULL STRIPPING: Erase the bone (>250 HU) so we can see the brain!
-      // (Change this to 'volumeData[i] = 255;' if you want to see the solid white skull instead)
-      volumeData[i] = 0; 
-    } else if (val >= autoMax) {
-      volumeData[i] = 255;
-    } else {
-      volumeData[i] = ((val - autoMin) / range) * 255;
-    }
+    if (val <= autoMin) volumeData[i] = 0; // Transparent background air
+    else if (val >= autoMax) volumeData[i] = 255; // Max density bone
+    else volumeData[i] = ((val - autoMin) / range) * 255;
   }
+
 
 
 
@@ -138,17 +127,18 @@ function createVolumeRendering(header, image) {
   texture.format = THREE.RedFormat;
   texture.type = THREE.UnsignedByteType;
   
-  // FIX: Use NearestFilter to get the rigid "Lego block" (voxel) look
-  texture.minFilter = THREE.NearestFilter;
-  texture.magFilter = THREE.NearestFilter;
+  // FIX: LinearFilter smoothly blends the voxels together!
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
   texture.unpackAlignment = 1;
   texture.needsUpdate = true;
 
-  // 3. Create the Volume Material (Fully Automatic Contrast, No Sliders needed)
+
+  // 3. Create the Cinematic Volume Material
   const volumeMaterial = new THREE.ShaderMaterial({
     glslVersion: THREE.GLSL3,
     uniforms: {
-      map: { value: texture } // Note: uThreshold and uOpacity are gone!
+      map: { value: texture }
     },
     vertexShader: /* glsl */`
       out vec3 vOrigin;
@@ -165,7 +155,6 @@ function createVolumeRendering(header, image) {
       precision highp sampler3D;
       
       uniform sampler3D map;
-      
       in vec3 vOrigin;
       in vec3 vDirection;
       out vec4 color;
@@ -183,39 +172,75 @@ function createVolumeRendering(header, image) {
         return vec2(t0, t1);
       }
 
+      // Calculates the 3D surface angle (gradient) for realistic lighting shadows
+      vec3 getNormal(vec3 p) {
+        float h = 0.005; 
+        vec3 n;
+        n.x = texture(map, p + vec3(h, 0, 0)).r - texture(map, p - vec3(h, 0, 0)).r;
+        n.y = texture(map, p + vec3(0, h, 0)).r - texture(map, p - vec3(0, h, 0)).r;
+        n.z = texture(map, p + vec3(0, 0, h)).r - texture(map, p - vec3(0, 0, h)).r;
+        return normalize(n);
+      }
+
       void main() {
         vec3 rayDir = normalize(vDirection);
         vec2 bounds = hitBox(vOrigin, rayDir);
-        
         if (bounds.x > bounds.y) discard;
         bounds.x = max(bounds.x, 0.0);
         
         vec3 p = vOrigin + bounds.x * rayDir;
-        float delta = 0.002; 
-        float maxVal = 0.0;
+        float delta = 0.0025; 
         
-        // Raymarch loop
+        vec4 accum = vec4(0.0); // We will pile layers of color onto this
+        
+        // Simulates a lamp attached to the camera, shining slightly from above
+        vec3 lightDir = normalize(-rayDir + vec3(0.0, 0.5, 0.0)); 
+        
         for (float t = bounds.x; t < bounds.y; t += delta) {
-          float d = texture(map, p + 0.5).r;
-          maxVal = max(maxVal, d); 
+          float val = texture(map, p + 0.5).r;
+          
+          if (val > 0.05) { // Skip empty air
+            
+            // 🎨 TRANSFER FUNCTION: Map density to colors and opacities
+            vec4 voxelColor;
+            if (val < 0.3) {
+              // Skin/Soft Tissue: Pinkish, highly transparent
+              voxelColor = vec4(0.9, 0.6, 0.5, val * 0.15); 
+            } else if (val < 0.45) {
+              // Muscle/Transition: darker, semi-transparent
+              voxelColor = vec4(0.8, 0.3, 0.3, val * 0.4);
+            } else {
+              // Bone: Solid, opaque, off-white
+              voxelColor = vec4(1.0, 0.95, 0.9, val * 2.0);
+            }
+            
+            // 💡 LIGHTING: Calculate shadows based on the 3D surface
+            vec3 normal = getNormal(p + 0.5);
+            float diffuse = max(dot(normal, lightDir), 0.0);
+            
+            // Mix ambient light (0.4) with directional light (0.6)
+            vec3 rgb = voxelColor.rgb * (diffuse * 0.6 + 0.4); 
+            
+            // Blend this voxel over the ones behind it (Front-to-back compositing)
+            float alpha = clamp(voxelColor.a, 0.0, 1.0);
+            accum.rgb += (1.0 - accum.a) * rgb * alpha;
+            accum.a += (1.0 - accum.a) * alpha;
+            
+            // Stop calculating if the pixel is completely solid to save performance
+            if (accum.a >= 0.98) break;
+          }
+          
           p += rayDir * delta;
         }
         
-        // Drop perfectly empty air
-        if (maxVal == 0.0) discard;
-        
-        // Removed the harsh pow() calculation!
-        // We just boost the alpha slightly so the brain looks solid.
-        float finalAlpha = min(maxVal * 1.5, 1.0);
-        
-        color = vec4(vec3(maxVal), finalAlpha);
-      
-
+        if (accum.a == 0.0) discard;
+        color = accum;
       }
     `,
     side: THREE.BackSide,
     transparent: true
   });
+
 
 
 
