@@ -1,13 +1,31 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>mb-app</title>
+    <title>Three.js NIFTI Viewer</title>
+    <link rel="stylesheet" href="/src/style.css">
   </head>
   <body>
-    <div id="app"></div>
+    <!-- UI Overlay -->
+    <div id="ui-container">
+      <h3>Medical Volume Viewer</h3>
+      
+      <label>1. Select Main NIFTI Scan:</label>
+      <input type="file" id="upload-scan" accept=".nii,.nii.gz" />
+      
+      <br><br>
+      
+      <button id="render-btn" disabled>2. Render Image</button>
+
+      
+      <p id="status-log" style="color: #4CAF50; font-weight: bold;">Status: Waiting for file...</p>
+    </div>
+
+    <canvas id="webgl-canvas"></canvas>
+
     <script type="module" src="/src/main.js"></script>
+    
   </body>
+  
 </html>
