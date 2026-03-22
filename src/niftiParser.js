@@ -21,13 +21,21 @@ export function readFileToNifti(file, callback, errorCallback) {
 
 // Converts NIFTI image data into a typed array safely
 export function getTypedData(header, image) {
-  if (header.datatypeCode === 2) return new Uint8Array(image);
-  if (header.datatypeCode === 4) return new Int16Array(image);
-  if (header.datatypeCode === 8) return new Int32Array(image);
-  if (header.datatypeCode === 16) return new Float32Array(image);
-  if (header.datatypeCode === 64) return new Float64Array(image);
-  return new Uint8Array(image);
+  switch (header.datatypeCode) {
+    case 2: return new Uint8Array(image);     // UINT8
+    case 4: return new Int16Array(image);     // INT16
+    case 8: return new Int32Array(image);     // INT32
+    case 16: return new Float32Array(image);  // FLOAT32
+    case 64: return new Float64Array(image);  // FLOAT64
+    case 256: return new Int8Array(image);    // INT8  <-- Missing!
+    case 512: return new Uint16Array(image);  // UINT16 <-- Missing!
+    case 768: return new Uint32Array(image);  // UINT32 <-- Missing!
+    default:
+      console.warn("Unknown datatypeCode:", header.datatypeCode, "- defaulting to Uint8");
+      return new Uint8Array(image);
+  }
 }
+
 
 // Creates the Three.js Data3DTexture for the main brain scan
 export function createMainTexture(header, typedData) {
