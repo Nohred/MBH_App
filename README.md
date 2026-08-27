@@ -72,18 +72,5 @@ npm run preview   # to test the production build locally
 └── README.md
 ```
 
-> Note: the `code/` directory contains the Python/Jupyter side of the project (data cleaning and model training for hemorrhage segmentation/classification) and is independent from this Node/Vite visualization app. It requires its own Python environment (PyTorch, MONAI, nibabel, etc.), not `npm`.
 
-## Troubleshooting
 
-- **`sh: vite: not found`**: dependencies were never installed. Run `npm install` inside the project folder.
-- **`Vite requires Node.js version 20.19+ or 22.12+`**: your Node.js version is too old. Upgrade using nvm (see above).
-- If issues persist after upgrading Node, try a clean reinstall:
-  ```bash
-  rm -rf node_modules package-lock.json
-  npm install
-  ```
-
-## License
-
-See [LICENSE](./LICENSE).
