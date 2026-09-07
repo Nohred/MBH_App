@@ -1,19 +1,22 @@
 import torch
 from monai.inferers import sliding_window_inference
+from monai.data import MetaTensor
+from monai.transforms import Invertd
 
 from .transforms import PATCH_SIZE, get_inference_transforms
-from .model import load_model
 
 SW_BATCH_SIZE = 1
 OVERLAP = 0.5
 
 
 def preprocess_case(image_path: str):
-    processed = get_inference_transforms()({"image": image_path})
-    return processed["image"]
+    transform = get_inference_transforms()
+    return transform({"image": image_path}), transform
 
 
-def predict_volume(model, image_tensor: torch.Tensor, device: torch.device) -> torch.Tensor:
+def predict_volume(model, preprocessed, device: torch.device) -> torch.Tensor:
+    processed_case, processed_transform = preprocessed
+    image_tensor = processed_case["image"]
     inputs = image_tensor.unsqueeze(0).to(device)
     with torch.inference_mode():
         outputs = sliding_window_inference(
@@ -27,4 +30,17 @@ def predict_volume(model, image_tensor: torch.Tensor, device: torch.device) -> t
         )
     if outputs.ndim == 6:
         outputs = outputs[:, 0]
-    return torch.argmax(outputs[0], dim=0)
+
+    pred_classes = torch.argmax(outputs[0], dim=0).to(torch.uint8)
+    processed_case["pred"] = MetaTensor(
+        pred_classes.unsqueeze(0),
+        meta=processed_case["image"].meta,
+    )
+    inverse = Invertd(
+        keys="pred",
+        transform=processed_transform,
+        orig_keys="image",
+        nearest_interp=True,
+        to_tensor=True,
+    )
+    return inverse(processed_case)["pred"][0].to(torch.uint8)

@@ -12,5 +12,7 @@ def load_nifti(path: str | Path, pixel_type=None) -> Tuple[np.ndarray, sitk.Imag
 
 def save_mask(mask: np.ndarray, reference: sitk.Image, path: str | Path) -> None:
     output = sitk.GetImageFromArray(np.asarray(mask, dtype=np.uint8))
-    output.CopyInformation(reference)
+    output.SetOrigin(reference.GetOrigin())
+    output.SetDirection(reference.GetDirection())
+    output.SetSpacing(reference.GetSpacing())
     sitk.WriteImage(output, str(path))
