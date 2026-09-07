@@ -1,32 +1,107 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Three.js NIFTI Viewer</title>
-    <link rel="stylesheet" href="/src/style.css">
+    <title>MBH Viewer | Hemorragia intracraneal</title>
+    <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <!-- UI Overlay -->
-    <div id="ui-container">
-      <h3>Medical Volume Viewer</h3>
-      
-      <label>1. Select Main NIFTI Scan:</label>
-      <input type="file" id="upload-scan" accept=".nii,.nii.gz" />
-      <br><br>
-      <button id="render-main-btn" disabled>2. Render Image</button>
+    <main>
+      <section id="home-screen" class="screen home-screen">
+        <p class="eyebrow">MBH App / laboratorio académico</p>
+        <h1>Visualización de hemorragia intracraneal</h1>
+        <p class="intro">
+          Plataforma experimental para explorar volúmenes de TC y máscaras de
+          segmentación de hemorragia intracraneal. Proyecto académico, no apto
+          para uso clínico.
+        </p>
+        <div class="home-actions">
+          <button class="primary-action" data-go-screen="visualize-screen">Visualizar estudio</button>
+          <button class="secondary-action" data-go-screen="segment-screen">Segmentar y visualizar</button>
+        </div>
+      </section>
 
-      <hr style="margin: 15px 0; border-color: #444;" />
+      <section id="visualize-screen" class="screen viewer-screen hidden">
+        <div class="ui-container">
+          <div class="screen-heading">
+            <div>
+              <p class="eyebrow">Visor manual</p>
+              <h2>Visualizar estudio</h2>
+            </div>
+            <button class="quiet-button" data-go-screen="home-screen">Volver al home</button>
+          </div>
+          <label for="upload-scan">NIfTI principal</label>
+          <input type="file" id="upload-scan" accept=".nii,.nii.gz" />
+          <button id="render-main-btn" disabled>Render</button>
 
-      <label>3. Select Hemorrhage Mask:</label>
-      <input type="file" id="upload-mask" accept=".nii,.nii.gz" disabled />
-      <br><br>
-      <button id="render-mask-btn" disabled>4. Apply Mask</button>
-      
-      <p id="status-log" style="color: #6bdd6fda; font-weight: bold; margin-top: 20px;">Status: Waiting for file...</p>
-    </div>
+          <hr />
+
+          <label for="upload-mask">Máscara de hemorragia (opcional)</label>
+          <input type="file" id="upload-mask" accept=".nii,.nii.gz" disabled />
+          <button id="render-mask-btn" disabled>Apply Mask</button>
+          <div class="view-controls" data-view-controls>
+            <label for="visualize-view-mode">Modo de vista</label>
+            <select id="visualize-view-mode" data-view-mode>
+              <option value="volume">Volumen 3D</option>
+              <option value="axial">Slice Axial</option>
+              <option value="coronal">Slice Coronal</option>
+              <option value="sagittal">Slice Sagital</option>
+            </select>
+            <label for="visualize-slice-slider">Posición del slice</label>
+            <input id="visualize-slice-slider" data-slice-slider type="range" min="0" max="100" value="50" disabled />
+            <label for="visualize-window-level">Window Level / Window Width</label>
+            <div class="window-controls">
+              <input id="visualize-window-level" data-window-level type="number" value="40" aria-label="Window Level" />
+              <input id="visualize-window-width" data-window-width type="number" value="120" min="1" aria-label="Window Width" />
+            </div>
+          </div>
+          <p id="status-log" class="status-log">Status: Esperando un archivo...</p>
+        </div>
+      </section>
+
+      <section id="segment-screen" class="screen viewer-screen hidden">
+        <div class="ui-container">
+          <div class="screen-heading">
+            <div>
+              <p class="eyebrow">Pipeline experimental</p>
+              <h2>Segmentar y visualizar</h2>
+            </div>
+            <button class="quiet-button" data-go-screen="home-screen">Volver al home</button>
+          </div>
+          <label for="segment-scan-input">NIfTI principal</label>
+          <input type="file" id="segment-scan-input" accept=".nii,.nii.gz" />
+          <label for="model-select">Modelo de segmentación</label>
+          <select id="model-select">
+            <option value="model-a">Modelo A</option>
+            <option value="model-b">Modelo B</option>
+            <option value="model-c">Modelo C</option>
+          </select>
+          <!-- Estos tres modelos representan modelos entrenados distintos; luego se conectarán al pipeline real de inferencia. -->
+          <button id="segment-btn" disabled>Segmentar</button>
+          <div class="view-controls" data-view-controls>
+            <label for="segment-view-mode">Modo de vista</label>
+            <select id="segment-view-mode" data-view-mode>
+              <option value="volume">Volumen 3D</option>
+              <option value="axial">Slice Axial</option>
+              <option value="coronal">Slice Coronal</option>
+              <option value="sagittal">Slice Sagital</option>
+            </select>
+            <label for="segment-slice-slider">Posición del slice</label>
+            <input id="segment-slice-slider" data-slice-slider type="range" min="0" max="100" value="50" disabled />
+            <label for="segment-window-level">Window Level / Window Width</label>
+            <div class="window-controls">
+              <input id="segment-window-level" data-window-level type="number" value="40" aria-label="Window Level" />
+              <input id="segment-window-width" data-window-width type="number" value="120" min="1" aria-label="Window Width" />
+            </div>
+          </div>
+          <p id="segment-status-log" class="status-log">Status: Esperando un archivo...</p>
+        </div>
+      </section>
+    </main>
 
     <canvas id="webgl-canvas"></canvas>
+    <canvas id="slice-canvas" class="hidden" aria-label="Corte 2D del estudio"></canvas>
 
     <script type="module" src="/src/main.js"></script>
   </body>

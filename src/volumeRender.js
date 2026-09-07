@@ -13,7 +13,9 @@ export function createVolumeMaterial(mainTexture) {
     uniforms: {
       map: { value: mainTexture },
       maskMap: { value: dummyTexture },
-      uHasMask: { value: false }
+      uHasMask: { value: false },
+      uSliceMode: { value: 0 },
+      uSlicePosition: { value: 0.5 }
     },
     vertexShader: /* glsl */`
       out vec3 vOrigin;
@@ -28,11 +30,13 @@ export function createVolumeMaterial(mainTexture) {
     fragmentShader: /* glsl */`
       precision highp float;
       precision highp sampler3D;
-      
+
       uniform sampler3D map;
       uniform sampler3D maskMap;
       uniform bool uHasMask;
-      
+      uniform int uSliceMode;
+      uniform float uSlicePosition;
+
       in vec3 vOrigin;
       in vec3 vDirection;
       out vec4 color;
@@ -51,7 +55,7 @@ export function createVolumeMaterial(mainTexture) {
       }
 
       vec3 getNormal(vec3 p) {
-        float h = 0.005; 
+        float h = 0.005;
         vec3 n;
         n.x = texture(map, p + vec3(h, 0, 0)).r - texture(map, p - vec3(h, 0, 0)).r;
         n.y = texture(map, p + vec3(0, h, 0)).r - texture(map, p - vec3(0, h, 0)).r;
@@ -64,17 +68,30 @@ export function createVolumeMaterial(mainTexture) {
         vec2 bounds = hitBox(vOrigin, rayDir);
         if (bounds.x > bounds.y) discard;
         bounds.x = max(bounds.x, 0.0);
-        
+
         vec3 p = vOrigin + bounds.x * rayDir;
-        float delta = 0.0025; 
+        float delta = 0.0025;
         vec4 accum = vec4(0.0);
-        vec3 lightDir = normalize(-rayDir + vec3(0.0, 0.5, 0.0)); 
-        
+        vec3 lightDir = normalize(-rayDir + vec3(0.0, 0.5, 0.0));
+
         for (float t = bounds.x; t < bounds.y; t += delta) {
-          float val = texture(map, p + 0.5).r;
-          float maskVal = uHasMask ? texture(maskMap, p + 0.5).r : 0.0;
-          
-          if (val > 0.05 || maskVal > 0.5) { 
+          vec3 samplePosition = p + 0.5;
+          float sliceDistance = 1.0;
+          if (uSliceMode == 1) sliceDistance = abs(samplePosition.z - uSlicePosition);
+          if (uSliceMode == 2) sliceDistance = abs(samplePosition.y - uSlicePosition);
+          if (uSliceMode == 3) sliceDistance = abs(samplePosition.x - uSlicePosition);
+          if (uSliceMode == 4) {
+            sliceDistance = min(abs(samplePosition.x - uSlicePosition),
+              min(abs(samplePosition.y - uSlicePosition), abs(samplePosition.z - uSlicePosition)));
+          }
+          if (uSliceMode != 0 && sliceDistance > delta * 2.0) {
+            p += rayDir * delta;
+            continue;
+          }
+          float val = texture(map, samplePosition).r;
+          float maskVal = uHasMask ? texture(maskMap, samplePosition).r : 0.0;
+
+          if (val > 0.05 || maskVal > 0.5) {
             vec3 rgb;
             float voxelAlpha;
 
@@ -90,14 +107,14 @@ export function createVolumeMaterial(mainTexture) {
               float diffuse = max(dot(normal, lightDir), 0.0);
               rgb = baseColor * (diffuse * 0.7 + 0.3);
             }
-            
+
             accum.rgb += (1.0 - accum.a) * rgb * voxelAlpha;
             accum.a += (1.0 - accum.a) * voxelAlpha;
             if (accum.a >= 0.98) break;
           }
           p += rayDir * delta;
         }
-        
+
         if (accum.a == 0.0) discard;
         color = accum;
       }
@@ -105,4 +122,23 @@ export function createVolumeMaterial(mainTexture) {
     side: THREE.BackSide,
     transparent: true
   });
+}
+
+const sliceModes = { volume: 0, axial: 1, coronal: 2, sagittal: 3, multiplanar: 4 };
+
+// View controls are kept here so a future NiiVue adapter can replace these uniform updates in one place.
+export function setSliceType(mode, volumeMesh) {
+  const sliceMode = sliceModes[mode] ?? sliceModes.volume;
+  if (volumeMesh?.material?.uniforms?.uSliceMode) {
+    volumeMesh.material.uniforms.uSliceMode.value = sliceMode;
+  }
+  return sliceMode;
+}
+
+export function updateSlicePosition(fraction, volumeMesh) {
+  const position = Math.min(1, Math.max(0, Number(fraction)));
+  if (volumeMesh?.material?.uniforms?.uSlicePosition) {
+    volumeMesh.material.uniforms.uSlicePosition.value = position;
+  }
+  return position;
 }
