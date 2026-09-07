@@ -230,11 +230,68 @@ renderMainBtn.addEventListener('click', () => {
 
 segmentBtn.addEventListener('click', () => {
   if (!selectedSegmentFile) return;
-  renderScan(selectedSegmentFile, segmentStatusLog, () => {
-    updateStatus('Estudio renderizado. Listo para la segmentación demo.', segmentStatusLog);
+  const selectedModel = document.getElementById('model-select')?.value;
+  if (selectedModel === 'model-c') {
+    updateStatus('El Modelo C todavía no está implementado.', segmentStatusLog);
+    return;
+  }
+
+  const modelId = selectedModel === 'model-a' ? 'model_a' : 'model_b';
+  segmentBtn.disabled = true;
+  renderScan(selectedSegmentFile, segmentStatusLog, async () => {
+    updateStatus('Ejecutando segmentación, puede tardar unos segundos...', segmentStatusLog);
+
+    try {
+      const response = await fetch('http://127.0.0.1:8000/api/v1/predict', {
+        method: 'POST',
+        body: (() => {
+          const formData = new FormData();
+          formData.append('file', selectedSegmentFile);
+          formData.append('model_id', modelId);
+          return formData;
+        })(),
+      });
+
+      if (!response.ok) {
+        let errorMessage = `Error del backend (${response.status}).`;
+        try {
+          const errorBody = await response.json();
+          errorMessage = errorBody.error?.message || errorMessage;
+        } catch {
+          // Conserva el mensaje HTTP si la respuesta no es JSON.
+        }
+        throw new Error(errorMessage);
+      }
+
+      const maskFile = new File([await response.blob()], `mask_${modelId}.nii.gz`, {
+        type: 'application/gzip',
+      });
+      readFileToNifti(maskFile, (maskHeader, maskImage) => {
+        const maskDimensions = [maskHeader.dims[1], maskHeader.dims[2], maskHeader.dims[3]];
+        const volumeDimensions = [volumeData.header.dims[1], volumeData.header.dims[2], volumeData.header.dims[3]];
+        if (maskDimensions.some((dimension, index) => Number(dimension) !== Number(volumeDimensions[index]))) {
+          segmentBtn.disabled = false;
+          updateStatus(`La máscara del ${modelId} no coincide con las dimensiones del volumen original.`, segmentStatusLog);
+          return;
+        }
+
+        const maskTypedData = getTypedData(maskHeader, maskImage);
+        const maskTexture = createMaskTexture(maskHeader, maskTypedData);
+        volumeData.maskTypedData = maskTypedData;
+        volumeMesh.material.uniforms.maskMap.value = maskTexture;
+        volumeMesh.material.uniforms.uHasMask.value = true;
+        syncActiveView();
+        segmentBtn.disabled = false;
+        updateStatus('Segmentación completada. La máscara está disponible en los cortes 2D.', segmentStatusLog);
+      }, (message) => {
+        segmentBtn.disabled = false;
+        updateStatus(`No se pudo leer la máscara devuelta: ${message}`, segmentStatusLog);
+      });
+    } catch (error) {
+      segmentBtn.disabled = false;
+      updateStatus(`No se pudo completar la segmentación: ${error.message}`, segmentStatusLog);
+    }
   });
-  // TODO: reemplazar por fetch a /api/v1/predictions cuando el pipeline de segmentación esté listo.
-  // El volumen queda renderizado para recibir la máscara generada por el modelo.
 });
 
 // --- 5. Apply Mask ---
